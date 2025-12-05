@@ -17,12 +17,16 @@ if not os.path.exists(nltk_data_path):
 nltk.data.path.append(nltk_data_path)
 
 # Download resources to the specified directory
+# Check if data exists to avoid redundant downloads on startup
 try:
-    nltk.download('punkt', download_dir=nltk_data_path)
-    nltk.download('punkt_tab', download_dir=nltk_data_path)
-    nltk.download('stopwords', download_dir=nltk_data_path)
+    if not os.path.exists(os.path.join(nltk_data_path, "tokenizers/punkt")):
+        nltk.download('punkt', download_dir=nltk_data_path)
+    if not os.path.exists(os.path.join(nltk_data_path, "tokenizers/punkt_tab")):
+        nltk.download('punkt_tab', download_dir=nltk_data_path)
+    if not os.path.exists(os.path.join(nltk_data_path, "corpora/stopwords")):
+        nltk.download('stopwords', download_dir=nltk_data_path)
 except Exception as e:
-    print(f"Error downloading NLTK data: {e}")
+    print(f"Error checking/downloading NLTK data: {e}")
 
 app = Flask(__name__)
 CORS(app)
@@ -50,18 +54,24 @@ def extractive_summary(text: str, sentences_count: int = 3) -> str:
         for i, sentence in enumerate(sentences):
             # TF-IDF component
             words = word_tokenize(sentence.lower())
-            content_score = sum(word_weights.get(word, 0) for word in words)
             
-            # Cosine similarity to document
-            sentence_vec = tfidf_matrix[i]
-            similarity_score = cosine_similarity(sentence_vec, doc_vector).flatten()[0]
+            # Prevent division by zero if sentence has no words
+            if len(words) > 0:
+                content_score = sum(word_weights.get(word, 0) for word in words)
+                
+                # Cosine similarity to document
+                sentence_vec = tfidf_matrix[i]
+                similarity_score = cosine_similarity(sentence_vec, doc_vector).flatten()[0]
 
-            # Positional bias (U-shaped: boost start/end sentences)
-            pos = i / len(sentences)
-            pos_weight = 0.5 + max(pos, 1 - pos)  # Ranges 0.5-1.5
-            
-            # Normalized score
-            score = (content_score / len(words)**0.5) * pos_weight + similarity_score
+                # Positional bias (U-shaped: boost start/end sentences)
+                pos = i / len(sentences)
+                pos_weight = 0.5 + max(pos, 1 - pos)  # Ranges 0.5-1.5
+                
+                # Normalized score
+                score = (content_score / len(words)**0.5) * pos_weight + similarity_score
+            else:
+                score = 0
+                
             sent_scores.append((score, i))
         
         # 5. Top sentence selection 
@@ -86,7 +96,7 @@ def translate_text(text: str, target_lang: str) -> str:
                 return translator.translate(text, dest=target_lang).text
             except Exception:
                 continue
-        raise Exception("Translation fialed after maximum retries")
+        raise Exception("Translation failed after maximum retries")
     except Exception as e:
         raise Exception(f"Translation error: {str(e)}")
 
